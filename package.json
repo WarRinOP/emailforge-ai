@@ -1,5 +1,5 @@
 {
-  "name": "emailforge-temp",
+  "name": "emailforge-ai",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -9,9 +9,12 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.79.0",
+    "@supabase/supabase-js": "^2.99.2",
     "next": "16.1.7",
     "react": "19.2.3",
-    "react-dom": "19.2.3"
+    "react-dom": "19.2.3",
+    "react-hot-toast": "^2.6.0"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
