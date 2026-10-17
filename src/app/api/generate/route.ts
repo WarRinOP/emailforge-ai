@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateWithClaude } from "@/lib/claude";
 import { getSupabaseAdmin } from "@/lib/supabase";
+import { reserveQuota, GuardConfig } from "@/lib/usage-guard";
+
+const GUARD: GuardConfig = { prefix: "ef", limit: 3, noun: "sequences" };
+const MAX_FIELD_CHARS = 1000;
 
 const VALID_SEQUENCE_TYPES = [
   "cold_outreach",
@@ -146,6 +150,17 @@ export async function POST(request: NextRequest) {
     const resolvedCompanyName =
       companyName && companyName.trim() ? companyName.trim() : "our company";
 
+    for (const field of [offer, targetAudience, senderName, companyName]) {
+      if (typeof field === "string" && field.length > MAX_FIELD_CHARS) {
+        return NextResponse.json({ error: "Input is too long" }, { status: 400 });
+      }
+    }
+
+    // ── Usage limit: atomic, per device and per network address ──
+    const supabase = getSupabaseAdmin();
+    const reservation = await reserveQuota(request, supabase, GUARD);
+    if (!reservation.ok) return reservation.response;
+
     // ── Call Claude ──────────────────────────────────────────────
     const systemPrompt = buildSystemPrompt();
     const userPrompt = buildUserPrompt({
@@ -164,9 +179,9 @@ export async function POST(request: NextRequest) {
     } catch (claudeError) {
       const message =
         claudeError instanceof Error ? claudeError.message : "Unknown error";
-      return NextResponse.json(
-        { error: `Claude API error: ${message}` },
-        { status: 500 }
+      await reservation.refund();
+      return reservation.respond(
+        NextResponse.json({ error: `Claude API error: ${message}` }, { status: 500 })
       );
     }
 
@@ -201,7 +216,6 @@ export async function POST(request: NextRequest) {
     }
 
     // ── Save to Supabase ─────────────────────────────────────────
-    const supabase = getSupabaseAdmin();
     const { data, error: dbError } = await supabase
       .from("ef_sequences")
       .insert({
@@ -224,7 +238,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    return NextResponse.json(data, { status: 201 });
+    return reservation.respond(NextResponse.json(data, { status: 201 }));
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unexpected error";
     return NextResponse.json({ error: message }, { status: 500 });
